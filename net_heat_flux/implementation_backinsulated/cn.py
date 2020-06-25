@@ -5,8 +5,9 @@ Crank-Nicholson implementation of 1D heat transfer
 # import libraries
 import numpy as np
 
-def general_temperatures(hf_type, T_initial, T_air, time_total, k, alpha, dx, x_grid, space_divisions, dt_all,
-                    t_grid, upsilon, bc_surface, q, h, hc, emissivity, sigma):
+def general_temperatures(T_initial, T_air, time_total, k, alphas, dx, x_grid, space_divisions,
+                    upsilon, bc_surface, q, h, hc, emissivity, sigma, time_step, T):
+    
     """
     General function to implement CN.
     Creates different functions of time for the incident heat flux.
@@ -19,10 +20,7 @@ def general_temperatures(hf_type, T_initial, T_air, time_total, k, alpha, dx, x_
     
     
     Parameters:
-    ----------
-    hf_type: type of heat flux function for the incident heat flux.
-        str
-    
+    ----------    
     T_initial: initial temperature in K
         int
         
@@ -32,11 +30,11 @@ def general_temperatures(hf_type, T_initial, T_air, time_total, k, alpha, dx, x_
     time_total: total time for calculations
         int
         
-    k: thermal conductivity in W/mK. Array with range of values
-        np.array
+    k: thermal conductivity in W/mK.
+        float
         
-    alpha: thermal diffusivity in m2/s. Array with range of values
-        np.array
+    alpha: thermal diffusivity in m2/s.
+        float
         
     dx: size of cell in space domain in m
         float 
@@ -46,9 +44,6 @@ def general_temperatures(hf_type, T_initial, T_air, time_total, k, alpha, dx, x_
 
     space_divisions: number of nodes in the spatial domain
         int
-
-    dt_all: different thermal diffusivities define different time steps for a given dx
-        np.array
 
     t_grid: list where each entry is the temporal domain for a given alpha and dt
         list
@@ -73,6 +68,12 @@ def general_temperatures(hf_type, T_initial, T_air, time_total, k, alpha, dx, x_
         
     sigma: Stefan Boltzman constant
         float
+        
+    time_step: current time step
+        int
+        
+    T: array of present temperatures
+        np.array
 
     Returns:
     -------
@@ -80,68 +81,21 @@ def general_temperatures(hf_type, T_initial, T_air, time_total, k, alpha, dx, x_
         dict
     
     """
-
-    temperatures = {}
-    
-    if hf_type == "Sinusoidal":
-        amplitude = q[0]
-        mean = q[1]
-        q = q[2]
-
-    # iterate over the different heat flux defined above
-    for heat_flux in q:
-    
-        temperatures[f"q:_{heat_flux}"] = {}
         
-        # iterate over all value pairs of alpha and k
-        for i in range(len(alpha)):
-            k_this = k[i]
-            upsilon_this = upsilon[i]
-            alpha_this = alpha[i]
-            t_grid_this = t_grid[i]
-            
-            # initialise temperature arrays for present and future temperatures
-            T = np.zeros_like(x_grid) + T_initial
-            Tn = np.zeros_like(x_grid)            
-            
-            # create tridiagonal matrix A
-            A = tridiag_matrix(bc_surface, upsilon_this, space_divisions, dx, k_this, T, h, hc, emissivity, sigma)
-            
-            # define the incident heat flux
-            if hf_type == "Constant":
-                q_array = (np.zeros_like(t_grid_this) + heat_flux) * 1000
-            elif hf_type == "Linear":
-                q_array = (heat_flux * t_grid_this) * 1000
-            elif hf_type == "Quadratic":
-                q_array = (heat_flux * t_grid_this * t_grid_this) * 1000
-            elif hf_type == "Sinusoidal":
-                q_array = (mean + amplitude*np.sin(heat_flux*t_grid_this)) * 1000
-                
-                
-            
-            temperatures[f"q:_{heat_flux}"][f"alpha_{alpha_this}"] = {}
+    # create tridiagonal matrix A
+    A = tridiag_matrix(bc_surface, upsilon, space_divisions, dx, k, T, h, hc, emissivity, sigma)
+
     
+    # create vector b
+    b = vector_b(bc_surface, upsilon, space_divisions, dx, k, T, T_initial, T_air, q, h, hc, 
+                 emissivity, sigma, time_step)
+    
+    # calculate value of future temperature
+    Tn = np.linalg.solve(A,b)
+    
+    nhf = -k *(Tn[0]-Tn[1])/(x_grid[0]-x_grid[1])
             
-            # iterate over each time step
-            for j,t in enumerate(t_grid_this[:-1]):
-                
-                if bc_surface == "Non-linear":
-                    A = tridiag_matrix(bc_surface, upsilon_this, space_divisions, dx, k_this, T, h, hc, emissivity, sigma)
-
-                # create vector b
-                b = vector_b(bc_surface, upsilon_this, space_divisions, dx, k_this, T, T_initial, T_air, q_array, h, hc, 
-                             emissivity, sigma, j)
-                
-                # calculate value of future temperature
-                Tn = np.linalg.solve(A,b)
-            
-                # update present temperature
-                T = Tn.copy()
-
-                # store temperature profile at this time in the overall dictionary
-                temperatures[f"q:_{heat_flux}"][f"alpha_{alpha_this}"][f"t_{t}"] = Tn
-            
-    return temperatures   
+    return Tn, Tn[0], nhf   
     
     
 
@@ -214,7 +168,7 @@ def tridiag_matrix(bc_surface, upsilon, space_divisions, dx, k, T, h, hc, emissi
 
 
 
-def vector_b(bc_surface, upsilon, space_divisions, dx, k, T, T_initial, T_air, q_array, h, hc, emmissivity, sigma, j):
+def vector_b(bc_surface, upsilon, space_divisions, dx, k, T, T_initial, T_air, q, h, hc, emmissivity, sigma, time_step):
     """
     Calculates vector b. Right hand side of linear system of equations
 
@@ -244,7 +198,7 @@ def vector_b(bc_surface, upsilon, space_divisions, dx, k, T, T_initial, T_air, q
     T_air: air(infinity) temperature in K for convective losses. Usually equals T_initial but not necessary
         int   
         
-    q_array: array of size t_grid that contains the incident heat flux at each time step
+    q: array of size t_grid that contains the incident heat flux at each time step
         np.array
         
     h: total heat transfer coefficient for the linearised surface boundary condition
@@ -259,7 +213,7 @@ def vector_b(bc_surface, upsilon, space_divisions, dx, k, T, T_initial, T_air, q
     sigma: Stefan Boltzman constant
         float
         
-    j: present iteration number
+    time_step: present iteration number
         int
     
     Returns:
@@ -280,11 +234,11 @@ def vector_b(bc_surface, upsilon, space_divisions, dx, k, T, T_initial, T_air, q
     # adjust vector for the front boundary condition
     if bc_surface == "Linear":
         b[0] = 2*upsilon*T[1] + (1 - 2*upsilon - upsilon*2*dx*h/k)*T[0] + 4*upsilon*dx*h*T_air/k + \
-            2*dx*upsilon/k * (q_array[j+1]+q_array[j])
+            2*dx*upsilon/k * (q[time_step]+q[time_step - 1])
     
     elif bc_surface == "Non-linear":
         b[0] = 2*upsilon*T[1] + (1- 2*upsilon - 2*dx*hc*upsilon/k)*T[0] + 4*dx*hc*upsilon*T_air/k + \
-            4*emmissivity*sigma*dx*upsilon*T[0]**4/k + 2*dx*upsilon/k * (q_array[j+1]+q_array[j])
+            4*emmissivity*sigma*dx*upsilon*T[0]**4/k + 2*dx*upsilon/k * (q[time_step]+q[time_step - 1])
     
     # adjust vector for the back boundary condition
     b[-1] = (1 - 2*upsilon)*T[-1] + 2*upsilon*T[-2]
