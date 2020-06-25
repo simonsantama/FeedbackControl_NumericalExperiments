@@ -234,11 +234,11 @@ def vector_b(bc_surface, upsilon, space_divisions, dx, k, T, T_initial, T_air, q
     # adjust vector for the front boundary condition
     if bc_surface == "Linear":
         b[0] = 2*upsilon*T[1] + (1 - 2*upsilon - upsilon*2*dx*h/k)*T[0] + 4*upsilon*dx*h*T_air/k + \
-            2*dx*upsilon/k * (q[time_step]+q[time_step - 1])
+            2*dx*upsilon/k * (q[time_step]+q[time_step + 1])
     
     elif bc_surface == "Non-linear":
         b[0] = 2*upsilon*T[1] + (1- 2*upsilon - 2*dx*hc*upsilon/k)*T[0] + 4*dx*hc*upsilon*T_air/k + \
-            4*emmissivity*sigma*dx*upsilon*T[0]**4/k + 2*dx*upsilon/k * (q[time_step]+q[time_step - 1])
+            4*emmissivity*sigma*dx*upsilon*T[0]**4/k + 2*dx*upsilon/k * (q[time_step]+q[time_step + 1])
     
     # adjust vector for the back boundary condition
     b[-1] = (1 - 2*upsilon)*T[-1] + 2*upsilon*T[-2]

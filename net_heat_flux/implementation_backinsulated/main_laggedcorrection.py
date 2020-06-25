@@ -1,6 +1,7 @@
 """
 This script uses a PID controller to maintain the NHF going into a sample at a constant value.
 It is applied to numerical experiments which use the Crank-Nicolson scheme to calculate temperature evolution.
+The algorithm corrects the IHF after a delay, which is set for both 1 second and 5 seconds (to evalute the performance)
 
 Boundary conditions
 ------------------
@@ -20,16 +21,19 @@ import time
 
 # import my own function
 from cn import general_temperatures
+from pid_controller import PID
 
 
 # parameters for the numerical experiment
-nhf_setpoint = 5000
-h = 45
-
+nhf_setpoint = 10000                 # W/m2K
+kp = [2,2,2,1.25]
+ki = [2,2,2,1.25]
+kd = [0.05,0.05,0.05,0.01]
+    
 # parameters for the Crank-Nicolson solution to heat diffusion
 T_initial = 288                      # K
 T_air = T_initial                    # K
-time_total = 601                      # s
+time_total = 301                     # s
 sample_length = 0.025                # m
 space_divisions = 100                # -
 h = 45                               # W/m2K for linearised surface bc with constant heat transfer coefficient
@@ -50,13 +54,19 @@ dts = (1 / 3) * (dx**2 / alphas)
 time_divisions = time_total / dts
 t_grids = []
 q_arrays = []
+
 for i,dt in enumerate(dts):
     t_grids.append(np.array([n * dt for n in range(int(time_divisions[i]))]))
-    # define the heat flux as an array which starts at the nhf_setpoint but will change.
-    q_arrays.append(np.zeros_like(t_grids[i])+ 20000) 
-    
 upsilons = (alphas*dts)/(2*dx**2)
 
+# define the heat flux as an array which starts at the nhf_setpoint but will change.
+for i in range(len(t_grids)):
+    q = np.zeros_like(t_grids[i])
+    q[0] = nhf_setpoint
+    q[1] = nhf_setpoint
+    q[2] = nhf_setpoint
+    q_arrays.append(q) 
+    
 # create list with surface boundary conditions to be validated
 boundary_conditions_surface = ["Linear", "Non-linear"]
 all_data = {}
@@ -64,7 +74,6 @@ all_data = {}
 ########
 # -- First set of experiments can immediatly correct the Incident Heat Flux
 ########
-
 
 # model both the linear and non-linear surface boundary conditions
 for bc_surface in boundary_conditions_surface:
@@ -80,15 +89,23 @@ for bc_surface in boundary_conditions_surface:
     all_data[bc_surface]["surface_temperature"] = {}
     all_data[bc_surface]["incident_heatflux"] = {}
     all_data[bc_surface]["net_heatflux"] = {}
-    
+    all_data[bc_surface]["error"] = {}
     
     # iterate over 4 different values of alpha and k
     for i in range(len(alphas)):
+        
+        # debugging
+#        if i in [0,1,2]:
+#            continue
+        
         k_this = ks[i]
         upsilon_this = upsilons[i]
         q_this = q_arrays[i]
         t_grid_this = t_grids[i]
         alpha_this = alphas[i]
+        kp_this = kp[i]
+        ki_this = ki[i]
+        kd_this = kd[i]
         
         # define initial temperatures array
         T = np.zeros_like(x_grid) + T_initial
@@ -98,27 +115,56 @@ for bc_surface in boundary_conditions_surface:
         all_data[bc_surface]["surface_temperature"][alphas[i]] = {}
         all_data[bc_surface]["incident_heatflux"][alphas[i]]= {}
         all_data[bc_surface]["net_heatflux"][alphas[i]] = {}
+        all_data[bc_surface]["error"][alphas[i]] = {}
+        
+        # define variables that are used by the PID controller
+        error_sum = 0
+        error_array = np.zeros_like(t_grid_this)
+        nhf_array = np.zeros_like(t_grid_this)
         
         # iterate over every single time step
-        for time_step,t in enumerate(t_grid_this[1:]):
-            time_step=time_step+1
-    
-            temperature_profile, surface_temperature, nhf = general_temperatures(
-                                                            T_initial, T_air, time_total, k_this, alpha_this, dx, x_grid,
-                                                            space_divisions, upsilon_this, bc_surface,
-                                                            q_this, h, hc, emissivity, sigma, time_step, T)
-    
-              
+        for time_step,t in enumerate(t_grid_this[:-2]):
+            if time_step == 0:
+                temperature_profile = T
+                surface_temperature = T[0]
+                nhf_array[time_step] = q_this[0]
+                error_array[time_step] = 0
+            else:
+                temperature_profile, surface_temperature, nhf = general_temperatures(
+                                                                T_initial, T_air, time_total, k_this, alpha_this, dx, x_grid,
+                                                                space_divisions, upsilon_this, bc_surface,
+                                                                q_this, h, hc, emissivity, sigma, time_step, T)
+                
+                # call PID controller to change the incident heat flux as a function of the net heat flux
+                last_error = error_array[time_step-1]
+                last_nhf = nhf_array[time_step-1]
+                nhf_array[time_step] = nhf
+                new_q, error_array[time_step], error_sum = PID(nhf, nhf_setpoint, last_error, last_nhf, error_sum, dts[i],
+                                  kp_this, ki_this, kd_this)
+                
+                # update the incident heat flux with the output value from the PID algorithm
+                q_this[time_step+2] = new_q
+                
+#                # PID debugging
+#                print(time_step)
+#                print(f"Set NHF: {nhf_setpoint}")
+#                print(f"Current ihf: {q_this[time_step]}")
+#                print(f"Next ihf: {q_this[time_step + 1]}")            
+#                print(f"Previous nhf:{last_nhf}")
+#                print(f"Current nhf: {nhf}")
+#                print(f"Error sum:{error_sum}")
+#                print(f"Current error: {error_array[time_step]}")
+#                time.sleep(0.5)
+            
+            # update data in the all_data dictionary that is saved to use later
             all_data[bc_surface]["temperature_profile"][alphas[i]][t] = temperature_profile
             all_data[bc_surface]["surface_temperature"][alphas[i]][t] = surface_temperature
-            all_data[bc_surface]["net_heatflux"][alphas[i]][t] = nhf
+            all_data[bc_surface]["net_heatflux"][alphas[i]][t] = nhf_array[time_step]
+            all_data[bc_surface]["incident_heatflux"][alphas[i]][t] = q_this[time_step]
+            all_data[bc_surface]["error"][alphas[i]][t] = error_array[time_step]
             
             # update temperature array
             T = temperature_profile.copy()
-            
-            
-            # update the new value of the incident heat flux
-            all_data[bc_surface]["incident_heatflux"][alphas[i]][t] = q_this[time_step]
         
     print(f" time taken for {bc_surface} boundary condition: {np.round(time.time() - start,2)} seconds")      
     
@@ -137,45 +183,3 @@ with open('total_data_backinsulated_immediatecorrection.pickle', 'wb') as handle
     pickle.dump(total_data, handle)
     print("\n")
     print("All data saved into total_data_backinsulated_immediatecorrection.pickle")
-
-#def PID_IHF(Input, Setpoint, previous_time, lastErr, lastInput, errSum):
-#    """
-#    Uses a PID algorithm to calculate the IHF based on target and current nhf
-#    Output: IHF. Input: NHF: Setpoint: Target NHF.
-#    See: http://brettbeauregard.com/blog/2011/04/improving-the-beginners-pid-introduction/
-#    """
-#
-#    # Define the maximum and minimum voltages
-#    Output_max = 4
-#    Output_min = 0
-#
-#    # Define the k constants (determined experimentally)
-#    kp = 0.01
-#    ki = 0.005
-#    kd = 0.0025
-#
-#    # How long since we last calculated
-#    now = datetime.now().time()
-#    # Calculates time difference between last scan and this one
-#    timeChange = (datetime.combine(date.min, now) - datetime.combine(date.min, previous_time)).total_seconds()
-#
-#    # Compute all the working error variables
-#    error = Setpoint - Input
-#    errSum += error * timeChange
-#    # dERr ia according to the initial design, but later dInput is used
-#    dErr = (error - lastErr) / timeChange
-#    dInput = (Input - lastInput) / timeChange
-#
-#    # Compute the Output
-#    Output = kp * error + ki * errSum - kd * dInput
-#
-#    if Output > Output_max:
-#        Output = Output_max
-#    elif Output < Output_min:
-#        Output = Output_min
-#
-#    return Output, now, error, Input, errSum
-
-########
-# -- Second set of expeimerents can only correct the incident heat flux once per every second
-########
