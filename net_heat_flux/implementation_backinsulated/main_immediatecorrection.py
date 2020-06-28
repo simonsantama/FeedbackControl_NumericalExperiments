@@ -34,7 +34,7 @@ kd = [0.05,0.05,0.05,0.01]
 # parameters for the Crank-Nicolson solution to heat diffusion
 T_initial = 288                      # K
 T_air = T_initial                    # K
-time_total = 301                     # s
+time_total = 601                     # s
 sample_length = 0.025                # m
 space_divisions = 100                # -
 h = 45                               # W/m2K for linearised surface bc with constant heat transfer coefficient
@@ -78,7 +78,6 @@ for bc_surface in boundary_conditions_surface:
     
     print("---------")
     print(f" Calculting for {bc_surface} boundary condition. Immediate IHF correction.")
-    print("---------")
     all_data[bc_surface] = {}
 
     # store the different data with different keys in the general dictionary

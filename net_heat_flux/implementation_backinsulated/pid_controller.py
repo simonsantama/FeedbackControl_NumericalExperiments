@@ -22,8 +22,10 @@ def PID(Input, Setpoint, lastErr, lastInput, errSum, timeChange, kp, ki, kd):
     # Compute the Output
     Output = kp * error + ki * errSum + kd * dErr
     
-    # avoid negative jumps
-    if Output < 5000:
-        Output = 5000
+    # physical limits of the FPA
+    if Output < 0:
+        Output = 0
+    elif Output > 55000:
+        Output = 55000
 
     return Output, error, errSum

@@ -221,7 +221,7 @@ def vector_b(bc_surface, upsilon, space_divisions, dx, k, T, T_initial, T_air, q
     b: vector to solve linear system of equations
         np.array
     """
-    
+
     # matrix B, similar to matrix A but multiplies T at present
     B = np.diagflat([upsilon for i in range(space_divisions - 1)], -1) +\
         np.diagflat([1 - 2 * upsilon for i in range(space_divisions)]) +\
