@@ -1,5 +1,5 @@
 """
-This script uses a PID controller to maintain the NHF absorned by the sample at a constant value.
+This script uses a PID controller to maintain the surface temperature of the sample at a constant value.
 It is applied to numerical experiments which use the Crank-Nicolson scheme to calculate temperature evolution.
 The PID controller is called:
     1. At every single time step in the temporal grid (unrealistic for physical experiments)
@@ -27,27 +27,20 @@ from cn import general_temperatures
 from pid_controller import PID
 from alldata_to_1Hz import convert_1Hz
 
-import sys
-sys.path.insert(1, './animations_and_plots/plot_numericalexperiments')
-from plot_numericalexperiments import plot_numericalexperiments
-
-# parameters for the numerical experiment
-nhf_setpoint = 5000                 # W/m2K
-
 # PID parameters were tuned manually
-kps = {"immediate": [4,4],
-       "1second": [1.25,1.15],
-       "5seconds": [1,0.95]}
+kps = {"immediate": [100,100],
+       "1second": [100,0],
+       "5seconds": [100,0]}
 
-kis = {"immediate": [2,2],
-       "1second": [0.5,0.25],
-       "5seconds": [0.1,0.1]}
+kis = {"immediate": [20,20],
+       "1second": [15,0],
+       "5seconds": [10,10]}
 
-kds = {"immediate": [0,0],
-       "1second": [0.05,0.075],
-       "5seconds": [0.075,0.1]}
+kds = {"immediate": [5,5],
+       "1second": [5,5],
+       "5seconds": [5,5]}
 # LISTS USED FOR TUNNING THE PID PARAMETERS
-scenario_not_considered = []
+scenario_not_considered = [0,1]
 alpha_not_considered = []
 
 
@@ -61,6 +54,9 @@ h = 45                               # W/m2K for linearised surface bc with cons
 hc = 10                              # W/m2K convective heat transfer coefficient
 emissivity = 1                       # -
 sigma = 5.67e-8                      # W/m2K4
+
+# parameters for the numerical experiment
+surface_temperature_setpoint = 300 + T_initial   # K
 
 # material properties
 ks = np.array([0.2,0.5])            # W/mK
@@ -148,10 +144,11 @@ for scenario_number, scenario in enumerate(time_lag_scenarios):
     
             # -- Define variables that are used by the PID controller
             error_sum = 0
-            # nhf array saves the actual nhf at every time step
+            # nhf array and surface_temperature_array save the actual nhf at every time step
             nhf_array = np.zeros_like(t_grids[alpha_number])
-            # last_nhf saves the nhf at a frequency that corresponds to the time lag
-            last_nhf= 0
+            surface_temperature_array = np.zeros_like(t_grids[alpha_number])
+            # last_surface_temperature saves the nhf at a frequency that corresponds to the time lag
+            last_surface_temperature = T_initial
             # error array saves the actual array at every time step
             error_array = np.zeros_like(t_grids[alpha_number])
             # last_error saves the error at a frequency that corresponds to the time lag
@@ -170,7 +167,8 @@ for scenario_number, scenario in enumerate(time_lag_scenarios):
                 
             # step in time
             for time_step,t in enumerate(t_grids[alpha_number][:-maximum_limit_tgrid]):
-                q_arrays[alpha_number][0:maximum_limit_tgrid] = nhf_setpoint
+                # q arrays starts at a value of 10 kW/m2 for the first time lag readings
+                q_arrays[alpha_number][0:maximum_limit_tgrid] = 10000
                 
                 # first, calculate the new temperature for the next time step (Crank-Nicolson)
                 temperature_profile, surface_temperature, nhf = general_temperatures(
@@ -180,9 +178,9 @@ for scenario_number, scenario in enumerate(time_lag_scenarios):
                 
                 # update temperature array, net heat flux and surface temperature
                 T = temperature_profile.copy()
-                surface_temperature = T[0]
+                surface_temperature_array[time_step] = surface_temperature
                 nhf_array[time_step] = nhf
-                error_array[time_step] = nhf_setpoint - nhf
+                error_array[time_step] = surface_temperature_setpoint - surface_temperature
                 timeChange = t - last_time
                 if timeChange == 0:
                     timeChange = 1e-6
@@ -192,15 +190,13 @@ for scenario_number, scenario in enumerate(time_lag_scenarios):
                     time_lag_counter += 1
                 else:
                     # call PID
-                    new_q, new_error, error_sum = PID(nhf, nhf_setpoint, last_error, last_nhf, 
+                    new_q, new_error, error_sum = PID(surface_temperature, surface_temperature_setpoint, 
+                                                      last_error, last_surface_temperature, 
                                                           error_sum, timeChange,kp[alpha_number], 
                                                           ki[alpha_number], kd[alpha_number])
                     
                     # update parameters
                     q_arrays[alpha_number][time_step+1:time_step+maximum_limit_tgrid] = new_q
-                    last_nhf = nhf
-                    last_error = new_error
-                    last_time = t
                     
                     # ---- PID debugging
 #                    print("\n")
@@ -209,17 +205,21 @@ for scenario_number, scenario in enumerate(time_lag_scenarios):
 #                    print(f"alpha: {alphas[alpha_number]}")      
 #                    print(f"Time step:  {time_step+1}/{len(t_grids[alpha_number])}")
 #                    print(f"Time:  {t}")
-#                    print(f"Set NHF: {nhf_setpoint}")
+#                    print(f"Set Surface Temperature: {surface_temperature_setpoint}")
 #                    print("-----")
 #                    print(f"Current IHF: {q_arrays[alpha_number][time_step]}")
 #                    print(f"Next IHF:    {q_arrays[alpha_number][time_step + 1]}")            
-#                    print(f"Previous nhf:{last_nhf}")
-#                    print(f"Current nhf: {nhf_array[time_step]}")
+#                    print(f"Previous surface temperature:{last_surface_temperature}")
+#                    print(f"Current surface temperature: {surface_temperature}")
 #                    print(f"Error sum: {error_sum}")
-#                    print(f"Current error: {nhf_setpoint - nhf}")
+#                    print(f"Current error: {error_array[time_step]}")
 #                    time.sleep(0.5)
                     # ----
-
+                    
+                    last_surface_temperature = surface_temperature
+                    last_error = new_error
+                    last_time = t
+                    
                     # update the counter
                     time_lag_counter = 0
                         
@@ -251,14 +251,11 @@ for scenario_number, scenario in enumerate(time_lag_scenarios):
     total_data_1Hz = convert_1Hz(total_data, scenario)
 
     # save 1Hz data in a pickle
-    with open(f"animations_and_plots/total_data_backinsulated_{scenario}_correction_1Hz.pickle", 'wb') as handle:
+    with open(f"animations/total_data_backinsulated_{scenario}_correction_1Hz.pickle", 'wb') as handle:
         pickle.dump(total_data_1Hz, handle)
         print(f"  total_data_backinsulated_{scenario}_correction_1Hz.pickle")
-    
-    # call plotting function
-    plot_numericalexperiments(total_data_1Hz, scenario, scenario_number)
-    print("  plot created and saved in the animations_and_plots folder")
-    print(f" - time taken for {scenario} correction: {np.round(time.time() - start,2)}")
+        
+    print(f"Time taken for {scenario} correction: {np.round(time.time() - start,2)}")
 
 
 
