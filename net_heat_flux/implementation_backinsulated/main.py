@@ -48,6 +48,7 @@ kds = {"immediate": [0,0],
        "5seconds": [0.075,0.1]}
 # LISTS USED FOR TUNNING THE PID PARAMETERS
 scenario_not_considered = []
+bc_not_considered = [1]
 alpha_not_considered = []
 
 
@@ -82,7 +83,7 @@ upsilons = (alphas*dts)/(2*dx**2)
 # define the incident heat flux as an array the size of each temporal grid
 q_arrays = []
 for t_grid in t_grids:
-    q = np.zeros_like(t_grid)
+    q = np.zeros_like(t_grid) + nhf_setpoint
     q_arrays.append(q)
     del q, t_grid
 
@@ -117,7 +118,10 @@ for scenario_number, scenario in enumerate(time_lag_scenarios):
     number_timereadings = (time_lag/dts).astype(int)
 
     # model both the linear and non-linear surface boundary conditions
-    for bc_surface in boundary_conditions_surface:
+    for bc_number, bc_surface in enumerate(boundary_conditions_surface):
+        
+        if bc_number in bc_not_considered:
+            continue
     
         print(f" calculating for {bc_surface} boundary condition")
         all_data[bc_surface] = {}
@@ -146,18 +150,16 @@ for scenario_number, scenario in enumerate(time_lag_scenarios):
             all_data[bc_surface]["incident_heatflux"][alphas[alpha_number]] = {}
             all_data[bc_surface]["error"][alphas[alpha_number]] = {}
     
-            # -- Define variables that are used by the PID controller
-            error_sum = 0
-            # nhf array saves the actual nhf at every time step
+            # arrays that save data at every time step
             nhf_array = np.zeros_like(t_grids[alpha_number])
-            # last_nhf saves the nhf at a frequency that corresponds to the time lag
-            last_nhf= 0
-            # error array saves the actual array at every time step
             error_array = np.zeros_like(t_grids[alpha_number])
-            # last_error saves the error at a frequency that corresponds to the time lag
+            surface_temperature_array = np.zeros_like(t_grids[alpha_number])
+            # variables that get updated every time the PID controller is called
+            last_nhf= 0
             last_error = 0
-            # last_error saves the error at a frequency that corresponds to the time log
             last_time = 0
+            last_time = 0
+            error_sum = 0
             # create a counter to determine when the PID controller needs to be called
             time_lag_counter = 0
             
@@ -167,22 +169,23 @@ for scenario_number, scenario in enumerate(time_lag_scenarios):
                 maximum_limit_tgrid = 2
             else:
                 maximum_limit_tgrid = 2*number_timereadings[alpha_number]
-                
+            
             # step in time
             for time_step,t in enumerate(t_grids[alpha_number][:-maximum_limit_tgrid]):
-                q_arrays[alpha_number][0:maximum_limit_tgrid] = nhf_setpoint
                 
                 # first, calculate the new temperature for the next time step (Crank-Nicolson)
                 temperature_profile, surface_temperature, nhf = general_temperatures(
-                                                                T_initial, T_air, time_total, ks[alpha_number], alphas[alpha_number], 
-                                                                dx, x_grid,space_divisions, upsilons[alpha_number], bc_surface,
-                                                                q_arrays[alpha_number], h, hc, emissivity, sigma, time_step, T)
+                                                                T_initial, T_air, time_total, ks[alpha_number], 
+                                                                alphas[alpha_number], dx, x_grid,space_divisions, 
+                                                                upsilons[alpha_number], bc_surface,q_arrays[alpha_number],
+                                                                h, hc, emissivity, sigma, time_step, T)
                 
                 # update temperature array, net heat flux and surface temperature
                 T = temperature_profile.copy()
                 surface_temperature = T[0]
                 nhf_array[time_step] = nhf
                 error_array[time_step] = nhf_setpoint - nhf
+                
                 timeChange = t - last_time
                 if timeChange == 0:
                     timeChange = 1e-6

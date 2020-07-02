@@ -6,12 +6,9 @@ Feedback control of the NHF using a Crank-Nicolson solver to determine the tempe
 
 # import libraries
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from matplotlib.lines import Line2D
-import pickle
 import numpy as np
-import time
+
 
 # plotting parameters
 figure_size = (12,6)
@@ -83,8 +80,8 @@ def plot_numericalexperiments(total_data_1Hz, scenario, scenario_number):
             ax.set_ylabel("Heat Flux [$kW/m^2$]", fontsize = fs_axis_labels)
         axis[0,0].set_ylim([-6, 40])
         axis[0,0].set_yticks(np.linspace(0,60,5))
-        axis[0,1].set_ylim([-1, 10])
-        axis[0,1].set_yticks(np.linspace(0,10,5))
+        axis[0,1].set_ylim([-2, 20])
+        axis[0,1].set_yticks(np.linspace(0,20,5))
         axis[1,0].set_ylabel("Temperature [$^\circ$C]", fontsize = fs_axis_labels)
         axis[1,0].set_ylim([-80,800])
         axis[1,0].set_yticks(np.linspace(0,800,5))
