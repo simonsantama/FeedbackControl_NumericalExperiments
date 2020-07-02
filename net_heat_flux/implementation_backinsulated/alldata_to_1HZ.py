@@ -2,7 +2,7 @@
 This function takes the temperature data calculated on different time grids (as delta t depends on the thermal diffusivity)
 and it outputs a similar dictionary but with temperature data at 1 Hz for all conditions.
 
-This is necessary to be able to animate the evolution of the desired quantities for all conditions
+This is necessary to be able to animate the evolution of the desired quantities for all conditions at the same time
 
 """
 

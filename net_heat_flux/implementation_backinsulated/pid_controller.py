@@ -20,7 +20,7 @@ def PID(Input, Setpoint, lastErr, lastInput, errSum, timeChange, kp, ki, kd):
     dErr = (error - lastErr) / timeChange
 
     # Compute the Output
-    Output = kp * error + ki * errSum + kd * dErr
+    Output = kp * error + ki * errSum - kd * dErr
     
     # physical limits of the FPA
     if Output < 0:
